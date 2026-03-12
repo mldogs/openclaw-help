@@ -1,8 +1,8 @@
-# Langfuse integration for OpenClaw: setup, validation, and pitfalls
+# Langfuse + OpenClaw: practical setup pitfalls and how to avoid them
 
-This document describes the integration path that was actually used on this host to get OpenClaw data into Langfuse quickly and with fewer mistakes.
+This document is a practical reference for setting up Langfuse with OpenClaw without wasting time on avoidable mistakes.
 
-It is written for another bot/operator who needs to reproduce the setup without rediscovering all the stupid parts.
+It is not a host-specific postmortem and not a dump of one machine's local setup. The goal is simpler: list the common failure modes, show how to validate each layer, and make it harder to misdiagnose what is actually broken.
 
 ## Scope
 
@@ -35,25 +35,32 @@ In practice:
 - keep `diagnostics-otel` if you want technical telemetry
 - add `langfuse-content` if you want actual conversational traces
 
-## Files involved
+## Where to inspect when something is unclear
+
+The exact file paths depend on how OpenClaw is installed, so do not hard-code one machine's layout into your mental model.
+
+What usually matters:
 
 ### OpenClaw config
-- `~/.openclaw/openclaw.json`
+- the main OpenClaw config file, typically something like `~/.openclaw/openclaw.json`
 
-### Stock plugin
-- `/usr/lib/node_modules/openclaw/extensions/diagnostics-otel/index.ts`
-- `/usr/lib/node_modules/openclaw/extensions/diagnostics-otel/src/service.ts`
-- `/usr/lib/node_modules/openclaw/extensions/diagnostics-otel/package.json`
+### Stock OTel exporter/plugin
+- the `diagnostics-otel` extension source or package metadata
+- its runtime dependencies
+- plugin load status in OpenClaw
 
-### Custom workspace plugin
-- `.openclaw/extensions/langfuse-content/openclaw.plugin.json`
-- `.openclaw/extensions/langfuse-content/index.ts`
+### Custom content plugin
+- your plugin manifest (`openclaw.plugin.json`)
+- the plugin entry file
+- the plugin config block under `plugins.entries.<id>.config`
 
-### Useful docs
-- `/usr/lib/node_modules/openclaw/docs/logging.md`
-- `/usr/lib/node_modules/openclaw/docs/tools/plugin.md`
-- `/usr/lib/node_modules/openclaw/docs/plugins/manifest.md`
-- `/usr/lib/node_modules/openclaw/dist/plugin-sdk/plugins/types.d.ts`
+### Useful reference material
+- OpenClaw logging docs
+- OpenClaw plugin docs
+- plugin manifest/schema docs
+- plugin hook type definitions
+
+If local docs are available, use them. If not, inspect the installed package source and hook types directly.
 
 ## Prerequisites
 
@@ -139,18 +146,18 @@ Observed failure:
 Cannot find module '@opentelemetry/api'
 ```
 
-Cause:
-- the bundled `diagnostics-otel` extension existed
-- but runtime deps were missing on disk in that extension directory
+Possible cause:
+- the bundled `diagnostics-otel` extension exists
+- but its runtime OTel deps are not actually present on disk in the installed extension directory
 
-Fix used on this machine:
+Practical fix to try:
 
 ```bash
-cd /usr/lib/node_modules/openclaw/extensions/diagnostics-otel
+cd <openclaw-install>/extensions/diagnostics-otel
 npm install --omit=dev
 ```
 
-Then restart OpenClaw.
+Then restart OpenClaw and verify the plugin really loads.
 
 ### Why this is annoying
 
@@ -416,8 +423,8 @@ Stock OTel data may appear in a shape that is not the chat-style trace you expec
 
 ### 2. `config.patch` may require raw patching
 
-On this machine, structured patching was not enough in at least one case.
-Using raw config patching was more reliable.
+Depending on OpenClaw version and tool surface, structured patching may be insufficient in some cases.
+If that happens, use raw config patching carefully and validate the resulting config before restart.
 
 ### 3. Config hashes can race
 
@@ -477,9 +484,9 @@ If you need to reproduce this quickly, do this in order:
 
 1. Inspect schema for `diagnostics.otel` and `plugins`.
 2. Enable `diagnostics-otel` with Langfuse OTLP endpoint.
-3. If plugin fails with missing OTel modules, run:
+3. If the plugin fails with missing OTel modules, install the missing deps in the local `diagnostics-otel` extension directory:
    ```bash
-   cd /usr/lib/node_modules/openclaw/extensions/diagnostics-otel
+   cd <openclaw-install>/extensions/diagnostics-otel
    npm install --omit=dev
    ```
 4. Restart OpenClaw.
